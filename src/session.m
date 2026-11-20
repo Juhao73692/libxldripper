@@ -6,10 +6,6 @@
 #include <pthread.h>
 #include <string.h>
 
-#ifndef XLD_RIPPER_VERSION
-#define XLD_RIPPER_VERSION "0.0.1"
-#endif
-
 enum { SECTOR_FRAMES = 588, AR_CONTEXT_FRAMES = 4 * 588, CHUNK_FRAMES = 4096 };
 
 struct xld_ripper_session {

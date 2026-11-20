@@ -29,7 +29,7 @@ The default layout is relative to the installation prefix:
 
 | Path | Contents |
 | --- | --- |
-| `lib/` | `libxldripper.0.0.1.dylib`, its `libxldripper.dylib` symlink, and `libxldripper.a` |
+| `lib/` | `libxldripper.0.1.0.dylib`, its `libxldripper.dylib` symlink, and `libxldripper.a` |
 | `include/xld/ripper.h` | Public C header |
 | `lib/cmake/libxldripper/` | CMake package |
 | `share/libxldripper/` | README and license |
@@ -46,7 +46,7 @@ application. Link `libxldripper::ripper` for the shared library or
 links the required macOS frameworks.
 
 ```cmake
-find_package(libxldripper 0.0.1 CONFIG REQUIRED)
+find_package(libxldripper 0.1.0 CONFIG REQUIRED)
 add_executable(rip_stdout rip_stdout.c)
 target_link_libraries(rip_stdout PRIVATE libxldripper::ripper)
 ```
@@ -69,7 +69,7 @@ ownership rules. Open a session using the current media path from
 `xld_ripper_track_get_info` to inspect the TOC. The caller manages disc mounting,
 ejection, and exclusive access to each physical drive.
 
-The current ABI is `0.0.1`. `xld_ripper_api_version` returns it as a packed
+The current ABI is `0.1.0`. `xld_ripper_api_version` returns it as a packed
 integer with one byte per version component. `xld_ripper_version` returns the
 library release as a string.
 
