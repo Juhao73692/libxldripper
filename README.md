@@ -141,6 +141,22 @@ Set `xldripper_abi_version` in the same file when the ABI version changes.
 CMake uses it for the dylib's `SOVERSION` and generates `XLD_RIPPER_API_VERSION`
 for public headers and runtime ABI reporting.
 
+The release workflow runs on GitHub when a new `vMAJOR.MINOR.PATCH` tag is
+pushed. The tag must match the release version in CMake. Put a `## Changes`
+section in the tagged commit's message body:
+
+```text
+release: v0.1.1
+
+## Changes
+
+- Describe a user-visible change.
+```
+
+The workflow stops if the section is missing or empty. It builds an Intel and
+an Apple Silicon `.pkg` for `/opt/libxldripper`, then publishes both installers
+with the changes from the commit. The installers are unsigned and not notarized.
+
 ## License and attribution
 
 Original contributions to this repository are licensed under the [Open

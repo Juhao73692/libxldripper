@@ -1,0 +1,155 @@
+name: Release macOS installers
+
+on:
+  push:
+    tags: ['v[0-9]+.[0-9]+.[0-9]+']
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+concurrency:
+  group: release-${{ github.ref }}
+
+jobs:
+  changes:
+    if: github.event.created && !github.event.deleted
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Read Changes from the tagged commit
+        run: |
+          git log -1 --format=%b HEAD > commit-body.txt
+          python3 - <<'PY'
+          import os
+          import re
+          from pathlib import Path
+
+          tag = os.environ['GITHUB_REF_NAME']
+          number = r'(?:0|[1-9][0-9]*)'
+          if not re.fullmatch(rf'v{number}\.{number}\.{number}', tag):
+              raise SystemExit(f'Invalid release tag: {tag}; expected vMAJOR.MINOR.PATCH')
+
+          body = Path('commit-body.txt').read_text(encoding='utf-8')
+          sections = re.split(r'^## Changes[ \t]*$', body, flags=re.MULTILINE)
+          if len(sections) != 2:
+              raise SystemExit('The tagged commit body must contain one ## Changes section')
+          changes = re.split(r'^#{1,2}[ \t]+', sections[1], maxsplit=1, flags=re.MULTILINE)[0].strip()
+          if not changes:
+              raise SystemExit('The ## Changes section in the tagged commit body is empty')
+          Path('changes.md').write_text(changes + '\n', encoding='utf-8')
+          PY
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: release-changes
+          path: changes.md
+          if-no-files-found: error
+          overwrite: true
+
+  package:
+    needs: changes
+    strategy:
+      matrix:
+        include:
+          - runner: macos-15-intel
+            arch: x86_64
+          - runner: macos-15
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
+    env:
+      ARCH: ${{ matrix.arch }}
+      INSTALL_PREFIX: /opt/libxldripper
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Build and stage the library and CLI
+        run: |
+          test "$(uname -m)" = "$ARCH"
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_OSX_ARCHITECTURES="$ARCH" -DCMAKE_INSTALL_PREFIX="$INSTALL_PREFIX" \
+            -DLIBXLDRIPPER_BUILD_CLI=ON -DLIBXLDRIPPER_BUILD_STATIC=ON
+          cmake --build build --parallel
+          cmake --install build --prefix "$RUNNER_TEMP/libxldripper-stage"
+      - name: Verify and package the installer
+        run: |
+          stage="$RUNNER_TEMP/libxldripper-stage"
+          version="${GITHUB_REF_NAME#v}"
+          reported_version="$("$stage/bin/xld-rip" --version)"
+          version_format='^xld-rip ([0-9]+\.[0-9]+\.[0-9]+) \(ABI ([0-9]+\.[0-9]+\.[0-9]+)\)$'
+          if [[ ! "$reported_version" =~ $version_format ]] || [[ "${BASH_REMATCH[1]}" != "$version" ]]; then
+            printf 'Tag %s does not match the built CLI version: %s\n' "$GITHUB_REF_NAME" "$reported_version" >&2
+            exit 1
+          fi
+          abi="${BASH_REMATCH[2]}"
+          minimum_macos="$(sed -n 's/^CMAKE_OSX_DEPLOYMENT_TARGET:STRING=//p' build/CMakeCache.txt)"
+          test -n "$minimum_macos"
+
+          for binary in bin/xld-rip lib/libxldripper.dylib lib/libxldripper.a; do
+            test "$(lipo -archs "$stage/$binary")" = "$ARCH"
+          done
+
+          mkdir -p dist
+          package="dist/libxldripper-$version-macos-$ARCH.pkg"
+          pkgbuild --root "$stage" --identifier org.libxld.libxldripper \
+            --version "$version" --install-location "$INSTALL_PREFIX" "$package"
+          pkgutil --payload-files "$package" | grep -Fx './bin/xld-rip'
+          printf '%s\n%s\n' "$abi" "$minimum_macos" > "dist/$ARCH.txt"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: installer-${{ matrix.arch }}
+          path: dist/
+          if-no-files-found: error
+          overwrite: true
+
+  publish:
+    needs: [changes, package]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          merge-multiple: true
+          path: release-assets
+      - name: Render release notes
+        run: |
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          from string import Template
+
+          assets = Path('release-assets')
+          metadata = (assets / 'arm64.txt').read_text(encoding='utf-8')
+          if metadata != (assets / 'x86_64.txt').read_text(encoding='utf-8'):
+              raise SystemExit('Package ABI or minimum macOS versions differ between architectures')
+          abi, minimum_macos = metadata.splitlines()
+          version = os.environ['GITHUB_REF_NAME'].removeprefix('v')
+          template = Template(Path('.github/release-notes.md').read_text(encoding='utf-8'))
+          notes = template.substitute(version=version, abi=abi, minimum_macos=minimum_macos,
+                                      changes=(assets / 'changes.md').read_text(encoding='utf-8').rstrip())
+          Path('release-notes.md').write_text(notes, encoding='utf-8')
+          PY
+      - name: Publish the release with both installers
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          intel="release-assets/libxldripper-$version-macos-x86_64.pkg"
+          arm="release-assets/libxldripper-$version-macos-arm64.pkg"
+          test -s "$intel" && test -s "$arm" || exit 1
+          tagged_commit="$(gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_REF_NAME" --jq '.sha')"
+          if [[ "$tagged_commit" != "$(git rev-parse HEAD)" ]]; then
+            printf 'Tag %s moved after this workflow started\n' "$GITHUB_REF_NAME" >&2
+            exit 1
+          fi
+          gh release create "$GITHUB_REF_NAME" "$intel" "$arm" \
+            --verify-tag --title "libxldripper $version" --notes-file release-notes.md
