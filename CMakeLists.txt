@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.20)
 if(NOT DEFINED CMAKE_OSX_DEPLOYMENT_TARGET)
     set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING "Minimum macOS version")
 endif()
-project(libxldripper VERSION 0.1.0 LANGUAGES C OBJC)
+project(libxldripper VERSION 0.1.1 LANGUAGES C OBJC)
 set(xldripper_abi_version 0.1.0)
 
 if(NOT APPLE OR NOT CMAKE_SYSTEM_NAME STREQUAL "Darwin")
