@@ -32,7 +32,8 @@ const char *xld_ripper_status_string(xld_ripper_status status)
         "success", "invalid argument", "out of memory", "CD media or device unavailable",
         "permission denied", "unsupported device capability or disc layout", "invalid CD TOC",
         "CD I/O failed", "session is busy", "extraction cancelled", "PCM output callback failed",
-        "extraction contains unconfirmed sectors", "invalid or mismatched AccurateRip records"
+        "extraction contains unconfirmed sectors", "invalid or mismatched AccurateRip records",
+        "disc not found in the AccurateRip database", "AccurateRip network request failed"
     };
     if (status < 0 || (size_t)status >= sizeof(messages) / sizeof(*messages))
         return "unknown status";

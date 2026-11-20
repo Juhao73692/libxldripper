@@ -25,6 +25,7 @@ add_library(xldripper_objects OBJECT
     src/device.c
     src/session.m
     src/accuraterip_id.c
+    src/accuraterip_query.m
     src/upstream/XLDCDDABackend.c
     src/upstream/XLDCDDARipper.m
     src/upstream/XLDSecureRipperEngine.m

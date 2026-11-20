@@ -17,6 +17,7 @@ extern "C" {
 
 typedef struct xld_ripper_device_list xld_ripper_device_list;
 typedef struct xld_ripper_session xld_ripper_session;
+typedef struct xld_ripper_accuraterip_query xld_ripper_accuraterip_query;
 
 /* Status and enum-valued fields are fixed-width for FFI. */
 typedef int32_t xld_ripper_status;
@@ -33,7 +34,9 @@ enum {
     XLD_RIPPER_CANCELLED,
     XLD_RIPPER_OUTPUT_ERROR,
     XLD_RIPPER_DAMAGED,
-    XLD_RIPPER_INVALID_ACCURATERIP
+    XLD_RIPPER_INVALID_ACCURATERIP,
+    XLD_RIPPER_ACCURATERIP_NOT_FOUND,
+    XLD_RIPPER_ACCURATERIP_NETWORK_ERROR
 };
 
 typedef struct {
@@ -177,6 +180,25 @@ xld_ripper_status xld_ripper_session_get_options(xld_ripper_session *session,
                                                 xld_ripper_options *options);
 
 #define XLD_RIPPER_ACCURATERIP_MAX_BYTES (16u * 1024u * 1024u)
+
+/* Called once for each started query on a background queue, possibly before
+ * start returns. Data is valid only during the callback and only supplied on
+ * success. http_status is 0 if no HTTP response was received. */
+typedef void (*xld_ripper_accuraterip_callback)(xld_ripper_status status, int32_t http_status,
+                                              const void *data, size_t size, void *context);
+
+/* Query the official database at XLD's endpoint. Copies the TOC snapshot and
+ * requires no open session. A start error leaves *query NULL and does not call
+ * the callback. On success the caller owns *query and must keep context alive
+ * through completion, including after cancellation. */
+xld_ripper_status xld_ripper_accuraterip_query_start(const xld_ripper_disc_info *disc,
+                                                    xld_ripper_accuraterip_callback callback,
+                                                    void *context, xld_ripper_accuraterip_query **query);
+/* Cancellation is best-effort and completes through the same callback.
+ * Free releases the handle without cancelling. Coordinate its lifetime with
+ * any other thread using it. Both functions accept NULL. */
+void xld_ripper_accuraterip_query_cancel(xld_ripper_accuraterip_query *query);
+void xld_ripper_accuraterip_query_free(xld_ripper_accuraterip_query *query);
 
 /* Check a complete dBAR response against a disc snapshot. No session is needed. */
 xld_ripper_status xld_ripper_accuraterip_data_validate(const xld_ripper_disc_info *disc,

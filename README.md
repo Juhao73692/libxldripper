@@ -9,7 +9,8 @@ CD audio as PCM and reports read diagnostics and checksums.
 - Extract tracks in Secure or Burst mode. Secure mode supports optional C2
   error pointers. Set a drive read offset or opt into drive speed control.
 - Calculate CRC32 with and without zero samples and AccurateRip v1 and v2
-  signatures. Check signatures against caller-supplied dBAR records.
+  signatures. Check signatures against local dBAR records or query the official
+  AccurateRip database using XLD's lookup endpoint.
 - Monitor progress and request cancellation while a track is being read.
 
 ## Build and install
@@ -86,8 +87,30 @@ library release as a string.
   `result.complete` is set. `XLD_RIPPER_DAMAGED` can accompany complete PCM
   when the engine had to choose an unconfirmed sector.
 - `xld_ripper_session_set_accuraterip_data` copies and validates supplied dBAR
-  records against the disc TOC. AccurateRip network access, metadata lookup,
-  and audio file encoding belong to the calling application.
+  records against the disc TOC. The calling application manages metadata lookup
+  and audio file encoding.
+
+### Online AccurateRip lookup
+
+To look up the disc after reading its TOC, pass a copy of its
+`xld_ripper_disc_info` to `xld_ripper_accuraterip_query_start`. The lookup runs
+asynchronously with a 15-second timeout and uses the official HTTP endpoint
+and dBAR path from XLD. The request uses TOC-derived identifiers. Opening a
+session and extracting tracks work offline unless the caller starts a lookup.
+
+Apps that enforce App Transport Security need a domain exception for
+`www.accuraterip.com` to use XLD's HTTP endpoint. Configure it in the host
+app's Info.plist under
+`NSAppTransportSecurity.NSExceptionDomains.www.accuraterip.com` with
+`NSExceptionAllowsInsecureHTTPLoads` enabled.
+
+On success, the background callback receives validated dBAR bytes. Load them
+into the session with `xld_ripper_session_set_accuraterip_data` before extraction,
+or copy them during the callback and load them later. If the disc changes, cancel
+the query and discard its result. Keep the callback context alive until
+completion, and free the query handle with `xld_ripper_accuraterip_query_free`.
+The callback distinguishes a missing disc (HTTP 404), network failure, invalid
+records, and cancellation.
 
 ## Optional command-line tool
 
@@ -99,10 +122,15 @@ _install/bin/xld-rip devices
 _install/bin/xld-rip info --device /dev/disk4 --pregaps --probe-c2
 _install/bin/xld-rip rip --device /dev/disk4 --track 1 --output track01.pcm
 _install/bin/xld-rip verify --device /dev/disk4 --track 1 --accuraterip disc.dBAR.bin
+_install/bin/xld-rip verify --device /dev/disk4 --track 1 --accuraterip-online
 ```
 
 `rip` writes raw PCM. `verify` reads the track and prints its checksums and
-verification status. Run `xld-rip --help` for the full set of options.
+verification status. With an AccurateRip option, `verify` exits with status 2
+if the read succeeds without a match, including when the disc is missing from
+the database. A lookup error such as a timeout or invalid dBAR returns 1.
+`rip --accuraterip-online` reports lookup failures and still attempts to read
+the track. Run `xld-rip --help` for the full set of options.
 
 ## License and attribution
 
@@ -113,8 +141,8 @@ copyright and attribution notices.
 
 **Attribution Notice.** This project incorporates modified code from X Lossless
 Decoder (XLD), copyright 2006–2025 tmkk. The CDDA backend, ripper, Secure Ripper
-engine, track validator, AccurateRip record parser, and TOC identifier algorithm
-were adapted from XLD SVN revision 652 for use as a standalone library.
+engine, track validator, AccurateRip lookup and record parser, and TOC identifier
+algorithm were adapted from XLD SVN revision 652 for use as a standalone library.
 
 ```sh
 svn checkout -r 652 https://svn.code.sf.net/p/xld/code/trunk/ xld-code

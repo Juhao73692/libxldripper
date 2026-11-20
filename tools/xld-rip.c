@@ -1,5 +1,6 @@
 #include <xld/ripper.h>
 
+#include <dispatch/dispatch.h>
 #include <errno.h>
 #include <inttypes.h>
 #include <limits.h>
@@ -33,6 +34,7 @@ static void usage(FILE *file)
           "  --c2                Require C2 pointer support in Secure mode\n"
           "  --speed X           Allow adaptive speed and set cap (0 for maximum)\n"
           "  --accuraterip FILE  Use caller-supplied dBAR records for this disc\n"
+          "  --accuraterip-online  Query the official database for this disc\n"
           "\n"
           "rip emits signed 16-bit LE stereo PCM at 44100 Hz (stdout by default).\n"
           "verify reads the same PCM and reports checksums without writing audio.\n"
@@ -142,6 +144,48 @@ static int load_database(xld_ripper_session *session, const char *path)
         xld_ripper_session_set_accuraterip_data(session, data, size);
     free(data);
     return status != XLD_RIPPER_OK ? report("load dBAR", status, NULL) : 0;
+}
+
+struct online_lookup {
+    xld_ripper_session *session;
+    dispatch_semaphore_t done;
+    xld_ripper_status status;
+    int32_t http_status;
+};
+
+static void load_online_result(xld_ripper_status status, int32_t http_status,
+                               const void *data, size_t size, void *context)
+{
+    struct online_lookup *lookup = context;
+    if (status == XLD_RIPPER_OK)
+        status = xld_ripper_session_set_accuraterip_data(lookup->session, data, size);
+    lookup->status = status;
+    lookup->http_status = http_status;
+    dispatch_semaphore_signal(lookup->done);
+}
+
+static int load_online_database(xld_ripper_session *session)
+{
+    xld_ripper_disc_info disc;
+    xld_ripper_status status = xld_ripper_disc_get_info(session, &disc);
+    if (status != XLD_RIPPER_OK) return report("query AccurateRip", status, NULL);
+
+    struct online_lookup lookup = {.session = session, .done = dispatch_semaphore_create(0)};
+    if (!lookup.done) return report("query AccurateRip", XLD_RIPPER_NO_MEMORY, NULL);
+    xld_ripper_accuraterip_query *query;
+    status = xld_ripper_accuraterip_query_start(&disc, load_online_result, &lookup, &query);
+    if (status == XLD_RIPPER_OK) {
+        dispatch_semaphore_wait(lookup.done, DISPATCH_TIME_FOREVER);
+        xld_ripper_accuraterip_query_free(query);
+        status = lookup.status;
+    }
+    dispatch_release(lookup.done);
+
+    if (status == XLD_RIPPER_OK) return 0;
+    if (status == XLD_RIPPER_ACCURATERIP_NETWORK_ERROR && lookup.http_status)
+        fprintf(stderr, "xld-rip: AccurateRip HTTP %" PRId32 "\n", lookup.http_status);
+    report("query AccurateRip", status, NULL);
+    return status != XLD_RIPPER_ACCURATERIP_NOT_FOUND && status != XLD_RIPPER_UNSUPPORTED;
 }
 
 struct output {
@@ -292,7 +336,7 @@ int main(int argc, char **argv)
         return 2;
     }
     const char *path = NULL, *output = rip ? "-" : NULL, *database = NULL;
-    int pregaps = 0, c2 = 0;
+    int pregaps = 0, c2 = 0, online = 0;
     long track = -1;
     xld_ripper_options options;
     xld_ripper_options_init(&options);
@@ -306,6 +350,7 @@ int main(int argc, char **argv)
         else if (!info && !strcmp(arg, "--c2")) options.c2_policy = XLD_RIPPER_C2_REQUIRED;
         else if (rip && !strcmp(arg, "--output") && i + 1 < argc) output = argv[++i];
         else if (!info && !strcmp(arg, "--accuraterip") && i + 1 < argc) database = argv[++i];
+        else if (!info && !strcmp(arg, "--accuraterip-online")) online = 1;
         else if (!info && !strcmp(arg, "--track") && i + 1 < argc && number(argv[i + 1], 0, 99, &track)) ++i;
         else if (!info && !strcmp(arg, "--offset") && i + 1 < argc && number(argv[i + 1], -8192, 8192, &parsed)) {
             options.read_offset_frames = (int32_t)parsed;
@@ -324,6 +369,10 @@ int main(int argc, char **argv)
     }
     if (!info && track < 0) {
         fputs("xld-rip: --track is required\n", stderr);
+        return 2;
+    }
+    if (database && online) {
+        fputs("xld-rip: choose either --accuraterip FILE or --accuraterip-online\n", stderr);
         return 2;
     }
     if (options.mode == XLD_RIPPER_BURST && options.c2_policy) {
@@ -345,7 +394,8 @@ int main(int argc, char **argv)
     else if ((status = xld_ripper_session_set_options(session, &options)) != XLD_RIPPER_OK)
         code = report("set options", status, NULL);
     else if (database && load_database(session, database)) code = 1;
-    else code = extract(session, (uint32_t)track, output, verify && database);
+    else if (online && load_online_database(session) && verify) code = 1;
+    else code = extract(session, (uint32_t)track, output, verify && (database || online));
     xld_ripper_session_close(session);
     return code;
 }

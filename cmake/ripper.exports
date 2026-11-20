@@ -1,4 +1,7 @@
 _xld_ripper_accuraterip_data_validate
+_xld_ripper_accuraterip_query_cancel
+_xld_ripper_accuraterip_query_free
+_xld_ripper_accuraterip_query_start
 _xld_ripper_api_version
 _xld_ripper_cancel
 _xld_ripper_device_list_count
