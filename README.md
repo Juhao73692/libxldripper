@@ -29,8 +29,8 @@ The default layout is relative to the installation prefix:
 
 | Path | Contents |
 | --- | --- |
-| `lib/` | `libxldripper.0.1.0.dylib`, its `libxldripper.dylib` symlink, and `libxldripper.a` |
-| `include/xld/ripper.h` | Public C header |
+| `lib/` | Versioned dylib, `libxldripper.dylib` symlink, and `libxldripper.a` |
+| `include/xld/` | Public C header and generated ABI version header |
 | `lib/cmake/libxldripper/` | CMake package |
 | `share/libxldripper/` | README and license |
 | `bin/xld-rip` | Optional command-line tool |
@@ -69,9 +69,8 @@ ownership rules. Open a session using the current media path from
 `xld_ripper_track_get_info` to inspect the TOC. The caller manages disc mounting,
 ejection, and exclusive access to each physical drive.
 
-The current ABI is `0.1.0`. `xld_ripper_api_version` returns it as a packed
-integer with one byte per version component. `xld_ripper_version` returns the
-library release as a string.
+`xld_ripper_api_version` returns the ABI as a packed integer with one byte per
+version component. `xld_ripper_version` returns the library release as a string.
 
 - `xld_ripper_options_init` defaults to Secure mode, C2 off, a read offset of
   zero, a retry limit of 20, and the drive's current speed. Offsets are in
@@ -131,6 +130,16 @@ if the read succeeds without a match, including when the disc is missing from
 the database. A lookup error such as a timeout or invalid dBAR returns 1.
 `rip --accuraterip-online` reports lookup failures and still attempts to read
 the track. Run `xld-rip --help` for the full set of options.
+
+## Release and ABI versions
+
+Set the release version with `project(... VERSION ...)` in `CMakeLists.txt`.
+It supplies the version reported by the library, the CLI, and the installed
+CMake package. Tag a release with its matching `v<version>` Git tag.
+
+Set `xldripper_abi_version` in the same file when the ABI version changes.
+CMake uses it for the dylib's `SOVERSION` and generates `XLD_RIPPER_API_VERSION`
+for public headers and runtime ABI reporting.
 
 ## License and attribution
 

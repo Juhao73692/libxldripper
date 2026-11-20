@@ -3,13 +3,12 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <xld/ripper_version.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-/* ABI 0.1.0 packed as (major << 16) | (minor << 8) | patch. */
-#define XLD_RIPPER_API_VERSION 0x000100u
 #define XLD_RIPPER_SAMPLE_RATE 44100u
 #define XLD_RIPPER_CHANNELS 2u
 #define XLD_RIPPER_FRAMES_PER_SECTOR 588u

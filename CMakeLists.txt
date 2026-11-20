@@ -12,6 +12,21 @@ endif()
 include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)
 
+# The public ABI version packs one unsigned byte per component.
+if(NOT xldripper_abi_version MATCHES "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$")
+    message(FATAL_ERROR "libxldripper ABI version must be in major.minor.patch form")
+endif()
+set(abi_major "${CMAKE_MATCH_1}")
+set(abi_minor "${CMAKE_MATCH_2}")
+set(abi_patch "${CMAKE_MATCH_3}")
+if(abi_major GREATER 255 OR abi_minor GREATER 255 OR abi_patch GREATER 255)
+    message(FATAL_ERROR "libxldripper ABI version components must be between 0 and 255")
+endif()
+math(EXPR xldripper_api_version "(${abi_major} << 16) | (${abi_minor} << 8) | ${abi_patch}"
+    OUTPUT_FORMAT HEXADECIMAL)
+set(version_header "${CMAKE_CURRENT_BINARY_DIR}/include/xld/ripper_version.h")
+configure_file(cmake/ripper_version.h.in "${version_header}" @ONLY)
+
 option(LIBXLDRIPPER_BUILD_CLI "Build the optional xld-rip command-line tool" OFF)
 option(LIBXLDRIPPER_BUILD_STATIC "Build the static library" ON)
 
@@ -34,7 +49,7 @@ add_library(xldripper_objects OBJECT
 set_target_properties(xldripper_objects PROPERTIES
     C_STANDARD 11 C_STANDARD_REQUIRED YES OBJC_STANDARD 11 OBJC_STANDARD_REQUIRED YES
     POSITION_INDEPENDENT_CODE YES C_VISIBILITY_PRESET hidden OBJC_VISIBILITY_PRESET hidden)
-target_include_directories(xldripper_objects PRIVATE include)
+target_include_directories(xldripper_objects PUBLIC include "${CMAKE_CURRENT_BINARY_DIR}/include")
 target_compile_definitions(xldripper_objects PRIVATE XLD_RIPPER_VERSION="${PROJECT_VERSION}")
 target_compile_options(xldripper_objects PRIVATE -Wall -Wextra "$<$<COMPILE_LANGUAGE:OBJC>:-fno-objc-arc>")
 # XLD uses CommonCrypto MD5 as an internal sector identity, independent of any
@@ -48,6 +63,7 @@ function(add_xldripper_target target kind export_name)
     set_target_properties(${target} PROPERTIES OUTPUT_NAME xldripper EXPORT_NAME ${export_name})
     target_include_directories(${target} PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/include>
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
     target_link_libraries(${target} PRIVATE xldripper_frameworks)
 endfunction()
@@ -81,7 +97,7 @@ install(TARGETS ${install_targets} EXPORT libxldripperTargets
     RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}"
     LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}"
     ARCHIVE DESTINATION "${CMAKE_INSTALL_LIBDIR}")
-install(FILES include/xld/ripper.h DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/xld")
+install(FILES include/xld/ripper.h "${version_header}" DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/xld")
 install(FILES README.md LICENSE DESTINATION "${CMAKE_INSTALL_DATADIR}/libxldripper")
 set(package_dir "${CMAKE_INSTALL_LIBDIR}/cmake/libxldripper")
 configure_package_config_file(cmake/libxldripperConfig.cmake.in libxldripperConfig.cmake

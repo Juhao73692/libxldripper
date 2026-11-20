@@ -1,0 +1,7 @@
+#ifndef XLD_RIPPER_VERSION_H
+#define XLD_RIPPER_VERSION_H
+
+/* ABI @xldripper_abi_version@ packed as (major << 16) | (minor << 8) | patch. */
+#define XLD_RIPPER_API_VERSION @xldripper_api_version@u
+
+#endif
